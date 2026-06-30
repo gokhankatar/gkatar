@@ -30,7 +30,9 @@ export async function runPowerShell(script: string, options?: { silent?: boolean
 }
 
 export async function runCmd(command: string, args: string[] = []): Promise<string> {
-  const { stdout, stderr } = await execFileAsync(command, args, {
+  const execArgs = isWindows() ? ['/c', command, ...args] : args
+  const execCmd = isWindows() ? 'cmd.exe' : command
+  const { stdout, stderr } = await execFileAsync(execCmd, execArgs, {
     encoding: 'utf8',
     maxBuffer: 50 * 1024 * 1024,
     shell: false

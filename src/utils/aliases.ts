@@ -32,6 +32,8 @@ const MAIN_COMMANDS: Record<string, string> = {
   guvenlikduvari: 'firewall',
   ortam: 'env',
   yol: 'path',
+  global: 'global',
+  'global-paketler': 'global',
   yardim: 'help',
   surum: 'version',
   sifre: 'password',
@@ -78,7 +80,14 @@ const LOG_ACTIONS: Record<string, string> = {
 const DEV_ACTIONS: Record<string, string> = {
   temizle: 'clean',
   bilgi: 'info',
-  bilgiler: 'info'
+  bilgiler: 'info',
+  listele: 'list',
+  kaldir: 'uninstall'
+}
+
+const GLOBAL_ACTIONS: Record<string, string> = {
+  kaldir: 'uninstall',
+  listele: 'list'
 }
 
 function mapWord(word: string | undefined, map: Record<string, string>): string | undefined {
@@ -123,6 +132,10 @@ export function normalizeArgv(argv: string[]): string[] {
 
     case 'logs':
       if (action) result[mainIdx + 1] = mapWord(action, LOG_ACTIONS) ?? action
+      break
+
+    case 'global':
+      if (action) result[mainIdx + 1] = mapWord(action, GLOBAL_ACTIONS) ?? action
       break
 
     case 'npm':

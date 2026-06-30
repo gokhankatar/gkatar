@@ -16,7 +16,11 @@ import { largest, find, size, tree } from './commands/files.js'
 import { showLogs, clearGkatarLogs, events } from './commands/logs.js'
 import { listServices, serviceAction } from './commands/services.js'
 import { defender, firewall, env, path } from './commands/security.js'
-import { npmClean, pnpmClean, bunClean, dockerInfo, dockerPrune } from './commands/dev.js'
+import {
+  npmClean, pnpmClean, bunClean, dockerInfo, dockerPrune,
+  showAllGlobal, listNpmGlobal, listPnpmGlobal, listBunGlobal,
+  uninstallNpmGlobal, uninstallPnpmGlobal, uninstallBunGlobal
+} from './commands/dev.js'
 import { showVersion, showHelp, uuid, password, hash, qr } from './commands/helpers.js'
 
 async function run(fn: () => Promise<void> | void): Promise<void> {
@@ -169,31 +173,63 @@ program.command('path').description('PATH göster').action(() => run(path))
 
 // ── Developer ──
 program
-  .command('npm [action]')
+  .command('global [action] [pkg]')
+  .description('Global paketleri listele veya kaldır (npm, pnpm, bun)')
+  .action((action, pkg) =>
+    run(() => {
+      if (!action) return showAllGlobal()
+      if ((action === 'uninstall' || action === 'kaldir' || action === 'remove') && pkg) {
+        return uninstallNpmGlobal(pkg)
+      }
+      error('Kullanım: gkatar global | gkatar global kaldir <paket>')
+      process.exit(1)
+    })
+  )
+
+program
+  .command('npm [action] [pkg]')
   .description('npm araçları')
-  .action((action) => {
-    if (action === 'clean' || action === 'temizle') return run(npmClean)
-    error('Kullanım: gkatar npm temizle')
-    process.exit(1)
-  })
+  .action((action, pkg) =>
+    run(() => {
+      if (action === 'clean' || action === 'temizle') return npmClean()
+      if (action === 'global' || action === 'list' || action === 'listele') return listNpmGlobal()
+      if ((action === 'uninstall' || action === 'kaldir' || action === 'remove') && pkg) {
+        return uninstallNpmGlobal(pkg)
+      }
+      error('Kullanım: gkatar npm temizle | gkatar npm global | gkatar npm kaldir <paket>')
+      process.exit(1)
+    })
+  )
 
 program
-  .command('pnpm [action]')
+  .command('pnpm [action] [pkg]')
   .description('pnpm araçları')
-  .action((action) => {
-    if (action === 'clean' || action === 'temizle') return run(pnpmClean)
-    error('Kullanım: gkatar pnpm temizle')
-    process.exit(1)
-  })
+  .action((action, pkg) =>
+    run(() => {
+      if (action === 'clean' || action === 'temizle') return pnpmClean()
+      if (action === 'global' || action === 'list' || action === 'listele') return listPnpmGlobal()
+      if ((action === 'uninstall' || action === 'kaldir' || action === 'remove') && pkg) {
+        return uninstallPnpmGlobal(pkg)
+      }
+      error('Kullanım: gkatar pnpm temizle | gkatar pnpm global | gkatar pnpm kaldir <paket>')
+      process.exit(1)
+    })
+  )
 
 program
-  .command('bun [action]')
+  .command('bun [action] [pkg]')
   .description('bun araçları')
-  .action((action) => {
-    if (action === 'clean' || action === 'temizle') return run(bunClean)
-    error('Kullanım: gkatar bun temizle')
-    process.exit(1)
-  })
+  .action((action, pkg) =>
+    run(() => {
+      if (action === 'clean' || action === 'temizle') return bunClean()
+      if (action === 'global' || action === 'list' || action === 'listele') return listBunGlobal()
+      if ((action === 'uninstall' || action === 'kaldir' || action === 'remove') && pkg) {
+        return uninstallBunGlobal(pkg)
+      }
+      error('Kullanım: gkatar bun temizle | gkatar bun global | gkatar bun kaldir <paket>')
+      process.exit(1)
+    })
+  )
 
 program
   .command('docker [action]')

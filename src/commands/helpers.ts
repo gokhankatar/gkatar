@@ -157,8 +157,14 @@ const COMMANDS = [
     icon: '👨‍💻',
     name: 'GELİŞTİRİCİ',
     items: [
+      ['global', 'Tüm global paketleri listele (npm, pnpm, bun)'],
+      ['global kaldir vue-cli', 'Global paket kaldır'],
+      ['npm global', 'npm global paketleri listele'],
+      ['npm kaldir vue-cli', 'npm global paket kaldır'],
       ['npm temizle', 'npm cache temizle'],
+      ['pnpm global', 'pnpm global paketleri listele'],
       ['pnpm temizle', 'pnpm cache temizle'],
+      ['bun global', 'bun global paketleri listele'],
       ['bun temizle', 'bun cache temizle'],
       ['docker', 'Docker bilgisi'],
       ['docker temizle', 'Docker prune']
