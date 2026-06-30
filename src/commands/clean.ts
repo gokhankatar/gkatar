@@ -1,36 +1,68 @@
 import { runPowerShell, formatBytes } from '../utils/exec.js'
 import { log } from '../utils/logger.js'
 import { createSpinner } from '../utils/spinner.js'
-import { success, warn, title, printTable } from '../utils/output.js'
+import { success, warn, title, printTable, info } from '../utils/output.js'
 
 type CleanTarget = 'all' | 'temp' | 'cache' | 'prefetch' | 'recycle' | 'dns'
 
+const PS_REMOVE_AND_COUNT = `
+function Get-ItemSize {
+  param([System.IO.FileSystemInfo]$Item)
+  if ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return 0 }
+  if ($Item.PSIsContainer) {
+    $sum = (Get-ChildItem -LiteralPath $Item.FullName -Recurse -Force -File -ErrorAction SilentlyContinue |
+      Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } |
+      Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+    if ($null -eq $sum) { return 0 }
+    return [int64]$sum
+  }
+  return [int64]$Item.Length
+}
+
+function Remove-AndCount {
+  param([string]$Path)
+  if (-not (Test-Path -LiteralPath $Path)) { return 0 }
+  $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  if (-not $item) { return 0 }
+  $size = Get-ItemSize $item
+  Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+  if (-not (Test-Path -LiteralPath $Path)) { return $size }
+  return 0
+}
+
+function Clear-DirChildren {
+  param([string]$Dir)
+  $total = [int64]0
+  if (-not (Test-Path -LiteralPath $Dir)) { return 0 }
+  Get-ChildItem -LiteralPath $Dir -Force -ErrorAction SilentlyContinue | ForEach-Object {
+  if ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) { return }
+    $total += Remove-AndCount $_.FullName
+  }
+  return $total
+}
+`
+
+async function getDiskFreeBytes(drive = 'C:'): Promise<number> {
+  const letter = drive.replace(':', '')
+  const script = `(Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${letter}:'").FreeSpace`
+  return parseInt(await runPowerShell(script, { silent: true }), 10) || 0
+}
+
 async function getFolderSize(path: string): Promise<number> {
   const script = `
-    $size = (Get-ChildItem -Path '${path.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-    if ($null -eq $size) { 0 } else { $size }
+    ${PS_REMOVE_AND_COUNT}
+    $item = Get-Item -LiteralPath '${path.replace(/'/g, "''")}' -Force -ErrorAction SilentlyContinue
+    if (-not $item) { 0 } else { Get-ItemSize $item }
   `
-  const result = await runPowerShell(script, { silent: true })
-  return parseInt(result, 10) || 0
+  return parseInt(await runPowerShell(script, { silent: true }), 10) || 0
 }
 
 async function cleanTemp(): Promise<number> {
   const script = `
-    $paths = @($env:TEMP, $env:WINDIR + '\\Temp')
-    $total = 0
-    foreach ($p in $paths) {
-      if (Test-Path $p) {
-        Get-ChildItem $p -Force -ErrorAction SilentlyContinue | ForEach-Object {
-          try {
-            $size = if ($_.PSIsContainer) {
-              (Get-ChildItem $_.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
-            } else { $_.Length }
-            Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-            $total += [int64]$size
-          } catch {}
-        }
-      }
-    }
+    ${PS_REMOVE_AND_COUNT}
+    $total = [int64]0
+    $total += Clear-DirChildren $env:TEMP
+    $total += Clear-DirChildren ($env:WINDIR + '\\Temp')
     $total
   `
   return parseInt(await runPowerShell(script, { silent: true }), 10) || 0
@@ -38,24 +70,10 @@ async function cleanTemp(): Promise<number> {
 
 async function cleanCache(): Promise<number> {
   const script = `
-    $paths = @(
-      "$env:LOCALAPPDATA\\Microsoft\\Windows\\INetCache",
-      "$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer"
-    )
-    $total = 0
-    foreach ($p in $paths) {
-      if (Test-Path $p) {
-        Get-ChildItem $p -Force -ErrorAction SilentlyContinue | ForEach-Object {
-          try {
-            $size = if ($_.PSIsContainer) {
-              (Get-ChildItem $_.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
-            } else { $_.Length }
-            Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-            $total += [int64]$size
-          } catch {}
-        }
-      }
-    }
+    ${PS_REMOVE_AND_COUNT}
+    $total = [int64]0
+    $total += Clear-DirChildren "$env:LOCALAPPDATA\\Microsoft\\Windows\\INetCache"
+    $total += Clear-DirChildren "$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer"
     $total
   `
   return parseInt(await runPowerShell(script, { silent: true }), 10) || 0
@@ -63,32 +81,47 @@ async function cleanCache(): Promise<number> {
 
 async function cleanPrefetch(): Promise<number> {
   const script = `
-    $path = "$env:WINDIR\\Prefetch"
-    $total = 0
-    if (Test-Path $path) {
-      Get-ChildItem $path -Force -ErrorAction SilentlyContinue | ForEach-Object {
-        try {
-          $total += $_.Length
-          Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
-        } catch {}
-      }
-    }
-    $total
+    ${PS_REMOVE_AND_COUNT}
+    Clear-DirChildren "$env:WINDIR\\Prefetch"
   `
   return parseInt(await runPowerShell(script, { silent: true }), 10) || 0
 }
 
-async function cleanRecycle(): Promise<void> {
-  await runPowerShell('Clear-RecycleBin -Force -ErrorAction SilentlyContinue', { silent: true })
+async function cleanRecycle(): Promise<number> {
+  const script = `
+    $freed = [int64]0
+    try {
+      $shell = New-Object -ComObject Shell.Application
+      $bin = $shell.Namespace(0x0a)
+      if ($bin) {
+        foreach ($item in @($bin.Items())) {
+          try {
+            $freed += [int64]$item.Size
+            $item.InvokeVerb('delete')
+          } catch {}
+        }
+      }
+    } catch {}
+    if ($freed -eq 0) {
+      try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
+    }
+    $freed
+  `
+  return parseInt(await runPowerShell(script, { silent: true }), 10) || 0
 }
 
 async function cleanDns(): Promise<void> {
-  await runPowerShell('ipconfig /flushdns | Out-Null; Clear-DnsClientCache -ErrorAction SilentlyContinue', { silent: true })
+  await runPowerShell(
+    'ipconfig /flushdns | Out-Null; Clear-DnsClientCache -ErrorAction SilentlyContinue',
+    { silent: true }
+  )
 }
 
 export async function clean(target: CleanTarget = 'all'): Promise<void> {
   title('Sistem Temizliği', '🧹')
-  let totalFreed = 0
+
+  const freeBefore = await getDiskFreeBytes()
+  let reportedFreed = 0
 
   const tasks: { name: string; fn: () => Promise<number | void> }[] = []
 
@@ -112,20 +145,39 @@ export async function clean(target: CleanTarget = 'all'): Promise<void> {
     const spinner = createSpinner(`${task.name} temizleniyor...`).start()
     try {
       const freed = await task.fn()
-      if (typeof freed === 'number') totalFreed += freed
-      spinner.succeed(`${task.name} temizlendi`)
-      log(`clean: ${task.name} - ${typeof freed === 'number' ? formatBytes(freed) : 'ok'}`)
+      if (typeof freed === 'number') {
+        reportedFreed += freed
+        const label = freed > 0 ? `${task.name} temizlendi (${formatBytes(freed)})` : `${task.name} — silinecek dosya yok`
+        spinner.succeed(label)
+        log(`clean: ${task.name} - ${formatBytes(freed)}`)
+      } else {
+        spinner.succeed(`${task.name} temizlendi`)
+        log(`clean: ${task.name} - ok`)
+      }
     } catch (err) {
       spinner.fail(`${task.name} temizlenemedi`)
       warn(String(err))
     }
   }
 
-  if (totalFreed > 0) {
-    success(`Toplam ${formatBytes(totalFreed)} alan boşaltıldı`)
+  const freeAfter = await getDiskFreeBytes()
+  const actualFreed = Math.max(0, freeAfter - freeBefore)
+
+  console.log()
+  if (actualFreed > 0) {
+    success(`Gerçekten boşaltılan alan: ${formatBytes(actualFreed)} (C: diski)`)
   } else {
-    success('Temizlik tamamlandı')
+    success('Temizlik tamamlandı — diskte ölçülebilir alan kazanılmadı')
   }
+
+  if (reportedFreed > actualFreed + 50 * 1024 * 1024) {
+    info(
+      'Not: Kilitli veya kullanımdaki dosyalar sayılır ama silinemez. ' +
+        'Bu yüzden eski sürümde yanıltıcı yüksek rakamlar görünebilirdi.'
+    )
+  }
+
+  log(`clean: reported=${formatBytes(reportedFreed)} actual=${formatBytes(actualFreed)}`)
 }
 
 export async function analyze(): Promise<void> {
@@ -157,6 +209,7 @@ export async function analyze(): Promise<void> {
 
   rows.push(['TOPLAM', formatBytes(total)])
   printTable(['Konum', 'Boyut'], rows)
+  info('Analiz, klasördeki toplam boyutu gösterir. Kilitli dosyalar temizlikte silinmeyebilir.')
   log(`analyze: total ${formatBytes(total)}`)
 }
 
