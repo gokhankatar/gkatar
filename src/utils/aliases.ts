@@ -37,7 +37,14 @@ const MAIN_COMMANDS: Record<string, string> = {
   yardim: 'help',
   surum: 'version',
   sifre: 'password',
-  sifreolustur: 'password'
+  sifreolustur: 'password',
+  performans: 'test'
+}
+
+const TEST_ACTIONS: Record<string, string> = {
+  yuk: 'load',
+  stres: 'stress',
+  izle: 'monitor'
 }
 
 const CLEAN_TARGETS: Record<string, string> = {
@@ -147,6 +154,10 @@ export function normalizeArgv(argv: string[]): string[] {
     case 'docker':
       if (action === 'temizle') result[mainIdx + 1] = 'prune'
       break
+
+    case 'test':
+      if (action) result[mainIdx + 1] = mapWord(action, TEST_ACTIONS) ?? action
+      break
   }
 
   return result
@@ -165,6 +176,7 @@ export const TURKISH_COMMANDS_HELP = [
   { tr: 'islem', en: 'process', desc: 'İşlem yönetimi' },
   { tr: 'portlar', en: 'ports', desc: 'Açık portlar' },
   { tr: 'ag', en: 'network', desc: 'Ağ bilgileri' },
+  { tr: 'performans', en: 'test', desc: 'HTTP performans testi (yuk, stres, benchmark)' },
   { tr: 'guncelle', en: 'update', desc: 'Winget güncelleme' },
   { tr: 'ara', en: 'search', desc: 'Paket ara' },
   { tr: 'yukle', en: 'install', desc: 'Paket yükle' },

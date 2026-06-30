@@ -22,6 +22,7 @@ import {
   uninstallNpmGlobal, uninstallPnpmGlobal, uninstallBunGlobal
 } from './commands/dev.js'
 import { showVersion, showHelp, uuid, password, hash, qr } from './commands/helpers.js'
+import { runTestAction } from './commands/benchmark.js'
 
 async function run(fn: () => Promise<void> | void): Promise<void> {
   if (!isWindows()) {
@@ -100,6 +101,38 @@ program.command('network').description('Ağ bilgileri').action(() => run(network
 program.command('ip').description('IP adresi').action(() => run(ip))
 program.command('dns').description('DNS bilgisi').action(() => run(dns))
 program.command('ping <host>').description('Ping testi').action((host) => run(() => ping(host)))
+
+// ── Performans Testi ──
+program
+  .command('test <action> <url>')
+  .description('HTTP performans testi (load, stress, benchmark, monitor)')
+  .option('-s, --sure <seconds>', 'Test süresi (saniye)', '10')
+  .option('-b, --baglanti <n>', 'Eşzamanlı bağlantı sayısı', '10')
+  .option('-n, --amount <n>', 'Toplam istek sayısı (süreyi geçersiz kılar)')
+  .option('-m, --method <method>', 'HTTP metodu', 'GET')
+  .option('-p, --pipelining <n>', 'Pipelining', '1')
+  .option('-t, --timeout <seconds>', 'İstek timeout (saniye)', '10')
+  .option('--max <n>', 'Stres testi max bağlantı', '200')
+  .option('--step <n>', 'Stres testi bağlantı artışı', '25')
+  .option('--json', 'JSON formatında çıktı')
+  .option('--save', 'Sonucu ~/.gkatar/ altına kaydet')
+  .action((action, url, opts) =>
+    run(() =>
+      runTestAction(action, url, {
+        url,
+        duration: parseInt(opts.sure, 10),
+        connections: parseInt(opts.baglanti, 10),
+        amount: opts.amount ? parseInt(opts.amount, 10) : undefined,
+        method: opts.method,
+        pipelining: parseInt(opts.pipelining, 10),
+        timeout: parseInt(opts.timeout, 10),
+        maxConnections: parseInt(opts.max, 10),
+        step: parseInt(opts.step, 10),
+        json: !!opts.json,
+        save: !!opts.save
+      })
+    )
+  )
 
 // ── Winget ──
 program.command('update').description('Tüm paketleri güncelle (winget upgrade --all)').action(() => run(updateAll))

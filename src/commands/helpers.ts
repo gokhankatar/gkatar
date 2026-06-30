@@ -101,6 +101,19 @@ const COMMANDS = [
     ]
   },
   {
+    icon: '⚡',
+    name: 'PERFORMANS TESTİ',
+    items: [
+      ['performans yuk http://localhost:3000', 'Yük testi (load testing)'],
+      ['performans stres http://localhost:3000', 'Stres testi (kırılma noktası)'],
+      ['performans benchmark http://localhost:3000', 'HTTP benchmark'],
+      ['performans izle http://localhost:3000', 'Yük testi + CPU/RAM izleme'],
+      ['test yuk <url> -s 30 -b 20', '30 sn, 20 bağlantı ile yük testi'],
+      ['test stres <url> --max 500 --step 50', 'Kademeli stres testi'],
+      ['test yuk <url> --save', 'Sonucu ~/.gkatar/ altına kaydet']
+    ]
+  },
+  {
     icon: '📦',
     name: 'WINGET',
     items: [
