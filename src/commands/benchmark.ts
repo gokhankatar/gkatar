@@ -237,7 +237,7 @@ function printBenchmarkDetail(result: autocannon.Result): void {
       return chalk.gray(line)
     })
     .join('\n')
-  box(colored, 'autocannon')
+  box(colored)
 }
 
 function printMonitorSummary(samples: SystemSample[]): void {
